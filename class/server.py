@@ -19,6 +19,8 @@ class Client:
             token += chr(random.randint(48,79));
         self.id = token;
 
+        
+
 class TCPserver:
 
     def __init__(self, ip, port):
@@ -32,8 +34,6 @@ class TCPserver:
         self.count = 0
         self.loopping = True
         threading.Thread(target=self.accepting_loop).start();
-        threading.Thread(target=self.listening_loop).start();
-
 
     def accepting_loop(self):
 
@@ -59,6 +59,7 @@ class TCPserver:
                 print("client_id =======> ",client_obj.id)
                 self.count += 1
                 client.send(client_obj.id.encode());
+                threading.Thread(target=self.client_loop, args=(client_obj,)).start();
             
             except  Exception as e:
                 print(e)
@@ -100,34 +101,35 @@ class TCPserver:
         return False;
 
 
-    def listening_loop(self):
+    def client_loop(self, client):
+
+        print("theread ctreated =======> ")
         while self.loopping:
+
+            if(client.status is False):
+                break
+            
             time.sleep(0.0001)
-            for c in self.clients:
-                if(c.status == False):
-                    continue
-                try:
-                    data = c.socket.recv(1024);
-                    if(data):
-    
-                        print("\ndata recived\n")
 
-                        if(len(data.decode()) < token_range):
-                            self.clients.remove(c);
-                            continue
-                        
-                        client_id = data.decode()[:token_range];
-                        if(client_id != c.id):
-                            self.clients.remove(c);
-                            continue
+            try:
+                data = client.socket.recv(1024).decode()
+                if(data):
+                    print("\ndata recived\n")
 
-                        
-                        print("\n"+"clientID: "+client_id + "   Data:"+data.decode()[token_range:]+"\n")
-                    else:
-                        # c.socket.close();
-                        c.status = False;
-                except:
-                    pass
+                    if(not len(data) or data[0] != "$" or len(data) < token_range):
+                        self.clients.remove(client);
+                        break
+                    
+                    client_id = data[:token_range];
+                    if(client_id != client.id):
+                        self.clients.remove(client);
+                        break
+
+                    print("\n"+"clientID: "+client_id + "   Data:"+data[token_range:]+"\n")
+                else:
+                    client.status = False;
+            except:
+                pass
 
 
     def send_data(self, id, data):
