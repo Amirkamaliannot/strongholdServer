@@ -10,7 +10,7 @@ class Client:
 
 
 
-class tcp_server:
+class TCPserver:
 
     def __init__(self, ip, port):
         self.clients = [];
@@ -65,14 +65,12 @@ class tcp_server:
 
     def listening_loop(self):
         while self.loopping:
-            time.sleep(0.001)
+            time.sleep(0.0001)
             for c in self.clients:
                 if(c.status == False):
                     continue
                 try:
-                    
                     data = c.socket.recv(1024);
-                    
                     if(data):
     
                         print("\ndata recived\n")
@@ -82,15 +80,34 @@ class tcp_server:
                 except:
                     pass
 
+
+    def send_data(self, ip, data):
+        for c in self.clients:
+            if(c.socket.getpeername()[0] == ip):
+                c.socket.send(data)
+                return True
+        return False
+    
+
+    def send_data_all(self, data):
+        for c in self.clients:
+            c.socket.send(data)
+        return True;
+
+
     def close(self):
         self.loopping = False;
-        self.s.close();
+        # self.s.close();
 
         
     def __del__(self):
         self.close();
 
 
-sokce = tcp_server('127.0.0.1', 8080);
+sokce = TCPserver('127.0.0.1', 8080);
 
 print("sdads");
+
+while True:
+    text = input("\nenter message : \n");
+    sokce.send_data_all(text.encode());
