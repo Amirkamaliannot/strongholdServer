@@ -14,14 +14,11 @@ class Client:
         self.creat_random_token();
     
     def creat_random_token(self):
-        token = "";
-        for i in range(16):
+        token = "$";
+        for i in range(token_range-1):
             token += chr(random.randint(48,79));
         self.id = token;
 
-a = Client(None, False)
-
-print(a.creat_random_token())
 class TCPserver:
 
     def __init__(self, ip, port):
@@ -41,6 +38,7 @@ class TCPserver:
     def accepting_loop(self):
 
         while self.loopping:
+            time.sleep(0.0001)
             print("counter =======> ",self.count)
 
             if(self.count == 10):
@@ -48,29 +46,56 @@ class TCPserver:
                 self.loopping = False
                 print("Server closed");
             try:
+
                 client, addr = self.s.accept();
-                self.add_client(client)
+                token = self.get_user_token(client)
+                if(token is False):
+                    continue
+
+                print("token =======> ",token)
+                client_obj = self.add_client(client, token)
                 
+                print("client_obj =======> ",client_obj)
+                print("client_id =======> ",client_obj.id)
                 self.count += 1
-                client.send(b'Hello, ' + addr[0].encode());
+                client.send(client_obj.id.encode());
+            
             except  Exception as e:
                 print(e)
                 pass
 
+    def get_user_token(self, client):
 
-    def add_client(self, client):
-        is_ip_exist = self.is_ip_exist(client.getpeername()[0])
-        if(is_ip_exist is not False):
-            self.clients[is_ip_exist].socket.close();
-            self.clients[is_ip_exist].socket = client;
-            self.clients[is_ip_exist].status = True;
+        token = client.recv(token_range).decode()
+
+        if(token == "?"):
+            return token
+        elif(token and token[0] == "$" and len(token) == token_range):
+            return token
         else:
-            self.clients.append(Client(client, True))
+            return False
 
 
-    def is_ip_exist(self, ip):
+    def add_client(self, client, token):
+
+        is_exist = self.is_client_exist(token)
+        if(is_exist is not False):
+            self.clients[is_exist].socket.close();
+            self.clients[is_exist].socket = client;
+            self.clients[is_exist].status = True;
+            temp =self.clients[is_exist]
+        else:
+            temp = Client(client, True)
+            self.clients.append(temp)
+        
+        return temp
+
+        
+
+
+    def is_client_exist(self, token):
         for c in range(len(self.clients)):
-            if(self.clients[c].socket.getpeername()[0] == ip):
+            if(self.clients[c].id == token):
                 return c
         return False;
 
@@ -86,6 +111,18 @@ class TCPserver:
                     if(data):
     
                         print("\ndata recived\n")
+
+                        if(len(data.decode()) < token_range):
+                            self.clients.remove(c);
+                            continue
+                        
+                        client_id = data.decode()[:token_range];
+                        if(client_id != c.id):
+                            self.clients.remove(c);
+                            continue
+
+                        
+                        print("\n"+"clientID: "+client_id + "   Data:"+data.decode()[token_range:]+"\n")
                     else:
                         # c.socket.close();
                         c.status = False;
@@ -93,9 +130,9 @@ class TCPserver:
                     pass
 
 
-    def send_data(self, ip, data):
+    def send_data(self, id, data):
         for c in self.clients:
-            if(c.socket.getpeername()[0] == ip):
+            if(c.id == id):
                 c.socket.send(data)
                 return True
         return False
