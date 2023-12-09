@@ -1,15 +1,27 @@
 import socket
 import threading
 import time
+import random
+
+token_range = 12
 
 class Client:
     
     def __init__(self, socket, status):
         self.socket = socket;
         self.status = status;
+        self.id = None;
+        self.creat_random_token();
+    
+    def creat_random_token(self):
+        token = "";
+        for i in range(16):
+            token += chr(random.randint(48,79));
+        self.id = token;
 
+a = Client(None, False)
 
-
+print(a.creat_random_token())
 class TCPserver:
 
     def __init__(self, ip, port):
