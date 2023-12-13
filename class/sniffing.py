@@ -25,8 +25,34 @@ class Packet:
         self.source_address = socket.inet_ntoa(self.header[8])
         self.destination_address = socket.inet_ntoa(self.header[9])
         # payload data starts after the header
-        self.payload = packet[self.header_length:self.total_length]
+        self.payload = packet[self.header_length:]
+        self.payload_length = len(self.payload)
 
+        if(self.protocol == socket.IPPROTO_TCP):
+
+            self.transport_header_length = (self.payload[12] >> 4) * 4
+            self.raw_transport_header = packet[self.header_length:self.header_length+self.transport_header_length]
+            self.transport_header = struct.unpack('!HHIIBBHHH', self.raw_transport_header[:20])
+            self.tcp_source_port = self.transport_header[0]
+            self.tcp_destination_port = self.transport_header[1]
+            self.tcp_sequence_number = self.transport_header[2]
+            self.tcp_acknowledgment_number = self.transport_header[3]
+            self.flags = self.transport_header[5]
+            self.tcp_window_size = self.transport_header[6]
+            self.tcp_checksum = self.transport_header[7]
+            self.tcp_urgent_pointer = self.transport_header[8]
+            self.tcp_length =  self.payload_length - self.transport_header_length
+
+        elif(self.protocol == socket.IPPROTO_UDP):
+            
+            self.transport_header_length = 8
+            self.raw_transport_header = packet[self.header_length:self.header_length+self.transport_header_length]
+            self.transport_header = struct.unpack('!HHHH', self.raw_transport_header)
+            self.udp_source_port = self.transport_header[0]
+            self.udp_destination_port = self.transport_header[1]
+            self.udp_length = self.transport_header[2] # The length of the entire UDP datagram, including both header and data, in bytes.
+            self.udp_checksum = self.transport_header[3]
+            
         self.source_port = int.from_bytes(packet[self.header_length: self.header_length+2] , 'big')
         self.destination_port = int.from_bytes(packet[self.header_length+2: self.header_length+4], 'big')
 
@@ -134,14 +160,18 @@ LocalIP = getLocalIP()
 sniffing = Sniffing(LocalIP)
 
 for i in sniffing.sniffing():
-    print(i.source_address)
-    print(i.destination_address)
-    print(i.header_checksum)
-    print(i.total_length)
-    print(i.payload)
-    print(i.source_port)
-    print(i.destination_port)
-    print(i.output_packet())
+
+    pass
+    # if(i.protocol == socket.IPPROTO_TCP):
+        # print(i.raw_transport_header)
+        # break
+    # print(i.destination_address)
+    # print(i.header_checksum)
+    # print(i.total_length)
+    # print(i.payload)
+    # print(i.source_port)
+    # print(i.destination_port)
+    # print(i.output_packet())
     # break
 
 
