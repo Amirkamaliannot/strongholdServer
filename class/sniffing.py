@@ -10,60 +10,56 @@ from enum import Enum
 class Packet:
     def __init__(self, packet):
         self.packet = packet
-        header_length = (packet[0] & 0x0F) * 4
-        self.header_raw = packet[:header_length]
-        self.header = struct.unpack('!BBHHHBBH4s4s', self.header_raw)
-        self.version = self.header[0] >> 4
-        self.header_length = header_length
-        self.differentiated_services = self.header[1]
-        self.total_length = self.header[2]
-        self.identification = self.header[3]
-        self.flags_and_fragment_offset = self.header[4]
-        self.time_to_live = self.header[5]
-        self.protocol = self.header[6]
-        self.header_checksum = self.header[7]
-        self.source_address = socket.inet_ntoa(self.header[8])
-        self.destination_address = socket.inet_ntoa(self.header[9])
-        # payload data starts after the header
-        self.payload = packet[self.header_length:]
-        self.payload_length = len(self.payload)
+        self.parse_packet(packet)
 
-        if(self.protocol == socket.IPPROTO_TCP):
 
-            self.transport_header_length = (self.payload[12] >> 4) * 4
-            self.raw_transport_header = packet[self.header_length:self.header_length+self.transport_header_length]
-            self.transport_header = struct.unpack('!HHIIBBHHH', self.raw_transport_header[:20])
-            self.tcp_source_port = self.transport_header[0]
-            self.tcp_destination_port = self.transport_header[1]
+    def parse_packet(self, packet):
+        self.network_header_length = (packet[0] & 0x0F) * 4
+        self.network_header_raw = packet[:self.network_header_length]
+        self.network_header = struct.unpack('!BBHHHBBH4s4s', self.network_header_raw)
+        self.version = self.network_header[0] >> 4
+        self.differentiated_services = self.network_header[1]
+        self.total_length = self.network_header[2]
+        self.network_identification = self.network_header[3]
+        self.network_flags_and_fragment_offset = self.network_header[4]
+        self.network_time_to_live = self.network_header[5]
+        self.network_protocol = self.network_header[6]
+        self.network_checksum = self.network_header[7]
+        self.source_address = socket.inet_ntoa(self.network_header[8])
+        self.destination_address = socket.inet_ntoa(self.network_header[9])
+
+        self.network_payload = packet[self.network_header_length:] #transport segment
+        self.network_payload_length = len(self.network_payload)
+
+        if(self.network_protocol == socket.IPPROTO_TCP):
+
+            self.transport_header_length = (self.network_payload[12] >> 4) * 4
+            self.transport_header_raw = packet[self.network_header_length:self.network_header_length+self.transport_header_length]
+            self.transport_header = struct.unpack('!HHIIBBHHH', self.transport_header_raw[:20])
             self.tcp_sequence_number = self.transport_header[2]
             self.tcp_acknowledgment_number = self.transport_header[3]
-            self.flags = self.transport_header[5]
+            self.tcp_flags = self.transport_header[5]
             self.tcp_window_size = self.transport_header[6]
             self.transport_checksum = self.transport_header[7]
             self.tcp_urgent_pointer = self.transport_header[8]
-            self.tcp_length =  self.payload_length - self.transport_header_length
-            self.transport_data = self.payload[self.transport_header_length:]
+            self.tcp_length =  self.network_payload_length - self.transport_header_length # size of tcp data
+            self.transport_payload = self.network_payload[self.transport_header_length:]
 
-
-        elif(self.protocol == socket.IPPROTO_UDP):
+        elif(self.network_protocol == socket.IPPROTO_UDP):
             
             self.transport_header_length = 8
-            self.raw_transport_header = packet[self.header_length:self.header_length+self.transport_header_length]
-            self.transport_header = struct.unpack('!HHHH', self.raw_transport_header)
-            self.udp_source_port = self.transport_header[0]
-            self.udp_destination_port = self.transport_header[1]
-            self.udp_length = self.transport_header[2] # The length of the entire UDP datagram, including both header and data, in bytes.
+            self.transport_header_raw = packet[self.network_header_length:self.network_header_length+self.transport_header_length]
+            self.transport_header = struct.unpack('!HHHH', self.transport_header_raw)
+            self.udp_length = self.transport_header[2] - self.transport_header_length # size of tcp data
             self.transport_checksum = self.transport_header[3]
-            self.transport_data = self.payload[self.transport_header_length:]
+            self.transport_payload = self.network_payload[self.transport_header_length:]
             
-        self.source_port = int.from_bytes(packet[self.header_length: self.header_length+2] , 'big')
-        self.destination_port = int.from_bytes(packet[self.header_length+2: self.header_length+4], 'big')
+        self.source_port = int.from_bytes(packet[self.network_header_length: self.network_header_length+2] , 'big')
+        self.destination_port = int.from_bytes(packet[self.network_header_length+2: self.network_header_length+4], 'big')
 
-        # print("payload :: ")
-        # print(list(self.payload))
 
-    def calculate_checksum(self):
-        unpacked_header_with_zeroed_checksum = self.header[:7] + (0,) + self.header[8:]
+    def calculate_network_checksum(self):
+        unpacked_header_with_zeroed_checksum = self.network_header[:7] + (0,) + self.network_header[8:]
         header_with_zeroed_checksum = struct.pack('!BBHHHBBH4s4s', *unpacked_header_with_zeroed_checksum)
 
         total = 0
@@ -75,7 +71,7 @@ class Packet:
 
         # Finalize: Invert the bits
         checksum = ~total & 0xffff
-        self.header_checksum =  checksum
+        self.network_checksum =  checksum
 
 
 
@@ -84,29 +80,29 @@ class Packet:
         source_address = socket.inet_aton(self.source_address)
         destination_address = socket.inet_aton(self.destination_address)
         reserved = 0
-        protocol = self.protocol
-        tcp_length = self.payload_length
+        protocol = self.network_protocol
+        transport_length = self.network_payload_length
         
         # Pseudo Header
-        psh = struct.pack('!4s4sBBH', source_address, destination_address, reserved, protocol, tcp_length)
+        psh = struct.pack('!4s4sBBH', source_address, destination_address, reserved, protocol, transport_length)
 
-        if(self.protocol == socket.IPPROTO_TCP):
+        if(self.network_protocol == socket.IPPROTO_TCP):
             # TCP Header
-            tcp_header = self.raw_transport_header[:16]  # without checksum
+            tcp_header = self.transport_header_raw[:16]  # without checksum
             zero_checksum = 0
-            tcp_header_without_checksum = tcp_header + struct.pack('H', zero_checksum) + self.raw_transport_header[18:]
+            tcp_header_without_checksum = tcp_header + struct.pack('H', zero_checksum) + self.transport_header_raw[18:]
             
-            checksum_feed = psh + tcp_header_without_checksum + self.transport_data
+            checksum_feed = psh + tcp_header_without_checksum + self.transport_payload
 
             if(len(checksum_feed) % 2 != 0): checksum_feed += b'\x00'
 
-        elif(self.protocol == socket.IPPROTO_UDP):
+        elif(self.network_protocol == socket.IPPROTO_UDP):
             # UDP Header
-            udp_header = self.raw_transport_header[:6]  # without checksum
+            udp_header = self.transport_header_raw[:6]  # without checksum
             zero_checksum = 0
             udp_header_without_checksum = udp_header + struct.pack('H', zero_checksum)
             
-            checksum_feed = psh + udp_header_without_checksum + self.transport_data
+            checksum_feed = psh + udp_header_without_checksum + self.transport_payload
             if(len(checksum_feed) % 2 != 0): checksum_feed += b'\x00'
     
 
@@ -123,26 +119,25 @@ class Packet:
         self.transport_checksum =  checksum
 
 
-
     def change_source_address(self, new_address):
-        self.source_address = new_address
-        temp = bytearray(self.header_raw)
+        temp = bytearray(self.packet)
         temp[12:16] =  socket.inet_aton(new_address)
-        self.header_raw = bytes(temp)
-        self.header = struct.unpack('!BBHHHBBH4s4s', self.header_raw)
-        self.calculate_checksum()
+        self.packet = bytes(temp)
+        self.parse_packet(self.packet)
+        self.calculate_network_checksum()
+        self.calculate_transport_checksum()
     
 
     def change_destination_address(self, new_address):
-        self.source_address = new_address
-        temp = bytearray(self.header_raw)
+        temp = bytearray(self.packet)
         temp[16:20] =  socket.inet_aton(new_address)
-        self.header_raw = bytes(temp)
-        self.header = struct.unpack('!BBHHHBBH4s4s', self.header_raw)
-        self.calculate_checksum()
+        self.packet = bytes(temp)
+        self.parse_packet(self.packet)
+        self.calculate_network_checksum()
+        self.calculate_transport_checksum()
 
-    def output_packet(self):
-        return self.header_raw + self.payload
+    def output(self):
+        return self.packet 
 
 
 class Sniffing:
