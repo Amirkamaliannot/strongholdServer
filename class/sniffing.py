@@ -42,6 +42,8 @@ class Packet:
             self.tcp_checksum = self.transport_header[7]
             self.tcp_urgent_pointer = self.transport_header[8]
             self.tcp_length =  self.payload_length - self.transport_header_length
+            self.transport_data = self.payload[self.transport_header_length:]
+
 
         elif(self.protocol == socket.IPPROTO_UDP):
             
@@ -52,10 +54,13 @@ class Packet:
             self.udp_destination_port = self.transport_header[1]
             self.udp_length = self.transport_header[2] # The length of the entire UDP datagram, including both header and data, in bytes.
             self.udp_checksum = self.transport_header[3]
+            self.transport_data = self.payload[self.transport_header_length:]
             
         self.source_port = int.from_bytes(packet[self.header_length: self.header_length+2] , 'big')
         self.destination_port = int.from_bytes(packet[self.header_length+2: self.header_length+4], 'big')
 
+        # print("payload :: ")
+        # print(list(self.payload))
 
     def calculate_checksum(self):
         unpacked_header_with_zeroed_checksum = self.header[:7] + (0,) + self.header[8:]
@@ -71,6 +76,44 @@ class Packet:
         # Finalize: Invert the bits
         checksum = ~total & 0xffff
         self.header_checksum =  checksum
+
+
+
+    def calculate_tcp_checksum(self):
+        # Pseudo Header fields
+        source_address = socket.inet_aton(self.source_address)
+        destination_address = socket.inet_aton(self.destination_address)
+        reserved = 0
+        protocol = self.protocol
+        tcp_length = self.payload_length
+        
+        # Pseudo Header
+        psh = struct.pack('!4s4sBBH', source_address, destination_address, reserved, protocol, tcp_length)
+
+        
+        # TCP Header
+        tcp_header = self.raw_transport_header[:16]  # without checksum
+        zero_checksum = 0
+        tcp_header_without_checksum = tcp_header + struct.pack('H', zero_checksum) + self.raw_transport_header[18:]
+        
+        tcp_checksum_feed = psh + tcp_header_without_checksum + self.transport_data
+        if(len(tcp_checksum_feed) % 2 != 0): tcp_checksum_feed += b'\x00'
+
+        # print("feed :: ")
+        # print(list(tcp_checksum_feed[12:]))
+
+        total = 0
+        # Split the header into 16-bit words
+        for i in range(0, len(tcp_checksum_feed), 2):
+            word = (tcp_checksum_feed[i] << 8) + tcp_checksum_feed[i+1]
+            total += word
+            total = (total & 0xffff) + (total >> 16)
+
+        # Finalize: Invert the bits
+        checksum = ~total & 0xffff
+        
+        return checksum
+
 
 
     def change_source_address(self, new_address):
