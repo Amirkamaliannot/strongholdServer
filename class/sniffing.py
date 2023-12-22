@@ -44,6 +44,7 @@ class Packet:
             self.tcp_urgent_pointer = self.transport_header[8]
             self.tcp_length =  self.network_payload_length - self.transport_header_length # size of tcp data
             self.transport_payload = self.network_payload[self.transport_header_length:]
+            self.transport_header_optional = self.network_payload[20:self.transport_header_length]
 
         elif(self.network_protocol == socket.IPPROTO_UDP):
             
@@ -57,6 +58,54 @@ class Packet:
         self.source_port = int.from_bytes(packet[self.network_header_length: self.network_header_length+2] , 'big')
         self.destination_port = int.from_bytes(packet[self.network_header_length+2: self.network_header_length+4], 'big')
 
+
+    def repack_packet(self):
+        # Reconstruct the network header from the fields
+        network_header_packed = struct.pack(
+            '!BBHHHBBH4s4s',
+            (self.network_header[0] & 0xF0) + (self.network_header_length // 4),
+            self.differentiated_services,
+            self.total_length,
+            self.network_identification,
+            self.network_flags_and_fragment_offset,
+            self.network_time_to_live,
+            self.network_protocol,
+            self.network_checksum,
+            socket.inet_aton(self.source_address),
+            socket.inet_aton(self.destination_address)
+        )
+        
+        # Initialize transport_header_packed, will be populated based on the protocol
+        transport_header_packed = b''
+        
+        # Reconstruct the transport header based on protocol
+        if self.network_protocol == socket.IPPROTO_TCP:
+            transport_header_packed = struct.pack(
+                '!HHIIBBHHH',
+                self.source_port,
+                self.destination_port,
+                self.tcp_sequence_number,
+                self.tcp_acknowledgment_number,
+                (self.transport_header_length // 4) << 4,
+                self.tcp_flags,
+                self.tcp_window_size,
+                self.transport_checksum,
+                self.tcp_urgent_pointer
+            )
+            transport_header_packed += self.transport_header_optional
+        elif self.network_protocol == socket.IPPROTO_UDP:
+            transport_header_packed = struct.pack(
+                '!HHHH',
+                self.source_port,
+                self.destination_port,
+                self.udp_length + self.transport_header_length,
+                self.transport_checksum
+            )
+            
+        # Combine the network header, transport header, and payload to reconstruct the packet
+        repacked_packet = network_header_packed + transport_header_packed + self.transport_payload
+        
+        return repacked_packet
 
     def calculate_network_checksum(self):
         unpacked_header_with_zeroed_checksum = self.network_header[:7] + (0,) + self.network_header[8:]
